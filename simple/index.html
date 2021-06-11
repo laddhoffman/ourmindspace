@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+</head>
+<body>
+<div id="display" style="position: absolute; top: 10em;"></div>
+</body>
+<script>
+
+class UIElement {
+  constructor(div) {
+    this.children = [];
+
+    if (div) {
+      if (typeof div == 'string') {
+        this.div = document.getElementById(div);
+      } else {
+        this.div = div;
+      }
+    } else {
+      this.div = document.createElement('div');
+    }
+
+    // For now, we make assumptions here about our contents
+
+    // Have a text value in addition to other possible children
+    // Wrap it in a div for good measure
+    this.p = document.createElement('p');
+    const pdiv = document.createElement('div');
+    pdiv.append(this.p);
+    this.div.append(pdiv);
+
+    // Let's also have a div to wrap our children
+    const cdiv = document.createElement('div');
+    this.div.append(cdiv);
+
+    // For now, establish conventions by defining some of our parameters here.
+    this.conventions = {
+      // gravityDirection: 'left',
+    };
+
+    // To actually evaluate placements we may need some context.
+    // I guess we can introspect our own bounding box.
+    // We can also track changes of our children's properties, and
+    // recompute layouts and/or notify children of the need to recompute.
+
+    this.div.style.position = 'absolute';
+    this.div.style.border = '1px #888888 solid';
+    this.div.width = '50em';
+    // this.div['max-width'] = '300';
+    // this.div.height = '100';
+  }
+
+  createChild(label) {
+    // We want to return a handle like our own,
+    // but initialized with the child as the root.
+    // For now, the child will have no access to the parent; it will be a one-way relationship.
+    const child = new UIElement();
+    this.children.push(child);
+    // Need to tie the DOM together as well
+    this.div.append(child.div);
+    // See what we can do to support positioning
+    // Override default 'relative' positioning
+    // child.div.style.position = 'absolute';
+    return child;
+  }
+
+  setText(text) {
+    // Apply the update to the docElement
+    this.p.innerText = text;
+  }
+
+  getText() {
+    return this.p.innerText;
+  }
+
+  /* Commenting this out, as I'm using another approach for now
+  // Accept expression that we can use to compute the placement of this element.
+  function setPlacement(expr) {
+    // shall the expression depend on some dynamic values?
+    // let's look for the right place to evaluate this expression.
+    this.placementExpression = expr;
+    // Let's take a stab at an implementation here.
+    // {left, above, right, below} = expr;
+    // Each direction is an object
+    // Ultimately we want to know what's going on in each of these directions.
+    // Maybe we'll add diagonals or other dimensions.
+    // We want to be able to specify some conventions, so let's do that elsewhere in this class, and reference it here.
+    ['left', 'above', 'right', 'below'].forEach(direction => {
+      const {} = expr[direction]
+    });
+  }
+  */
+
+  verticalSplit(rowsInfoArray) {
+    const nRows = rowsInfoArray.length;
+    return rowsInfoArray.map((rowInfo, rowIndex) => {
+      // Create a div as a child.
+      // TODO: Store info that we can use to (re)compute the resulting layout properties.
+      // For now, just set the properties
+      const child = this.createChild();
+      // Tell this child where to exist.
+      if (rowIndex > 0) {
+        child.div.style.top = rowsInfoArray[rowIndex - 1];
+      }
+      return child;
+    });
+  }
+
+  horizontalSplit(colsInfoArray) {
+    // const nCols = colsInfoArray.length;
+    return colsInfoArray.map((colInfo, colIndex) => {
+      // Create a div as a child.
+      // TODO: Store info that we can use to (re)compute the resulting layout properties.
+      // For now, just set the properties
+      console.log(`horizontalSplit: attempting to create child ${colIndex + 1}`);
+      const child = this.createChild();
+      // Tell this child where to exist.
+      if (colIndex > 0) {
+        child.div.style.left = colsInfoArray[colIndex - 1];
+      }
+      return child;
+    });
+  }
+}
+
+/*
+const a = new UIElement('display1');
+setTimeout(() => {
+  a.setText('hello');
+}, 2000);
+*/
+
+
+// Example
+const webPage = new UIElement('display');
+const [titleBar, body] = webPage.verticalSplit(['6em', '*']);
+const columns = body.horizontalSplit(['30em', '60em', '*']);
+
+titleBar.setText('Title Bar');
+body.setText('Body');
+columns.map((col, idx) => {
+  console.log(`${idx}:`, col);
+  col.setText(`Column ${idx}`);
+});
+
+</script>
+
+
+
