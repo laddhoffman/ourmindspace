@@ -146,8 +146,11 @@ class UIElement {
     return child;
   }
 
-
   createChildren(infoArray, configureChild) {
+    // For now, let's just enforce here that each UIElement can only have one set of children.
+    if (this.children.length > 0) {
+      throw new Error('Each UIElement may only have one set of children');
+    }
     return infoArray.map((info, index) => {
       return this.createChild();
     }).map((child, index, children) => {
@@ -189,10 +192,10 @@ const rows2 = columns[1].verticalSplit(['20em', undefined]);
 titleBar.setText('Title Bar');
 body.setText('Body');
 columns.map((col, idx) => {
-  col.setText(`Column ${idx}`);
+  col.setText(`Column ${idx + 1}`);
 });
 rows2.map((row, idx) => {
-  row.setText(`Column 2 Row ${idx}`);
+  row.setText(`Column 2, Row ${idx + 1}`);
 });
 
 setTimeout(() => {
@@ -207,6 +210,51 @@ setTimeout(() => {
 // Also there are a couple more considerations to make for these UIElement boxes.
 // How big do we want them?
 // Not just shrinking to fit contents
+
+// How do we want to handle interactions among elements?
+// What we have so far is this kind of top-down hierarchical model of parents and children, forming a tree of elements.
+// This forces us to integrate each concept with its neighbors from the top down.
+// What if we implement a protocol by which each element can negotiate with its neighbors?
+// In cases where there is ambiguity, perhaps solicit input from a user.
+
+// Let's consider doing this using a dialog among elements.
+// Each one maintains some state (or references thereto?)
+// Each one seeks to be aware of the considerations of the others.
+
+// 2 extremes -- full centralization or full decentralization. What about options in between?
+// We could have special a special kind of entity that carries the responsibility of understanding the considerations of
+// the others, and has none of its own that directly interfere with theirs. A manager node. But when more than one of
+// these operate in the same space they'll need to coordinate, so we haven't really solved the problem.
+
+// Ultimately I want the viewport to be in the hands of the user. It needs to be under their discretion.
+
+// Each entity can report its own considerations.
+
+// In this immediate application, what we're trying to manage is the allocation of viewport space.
+// Based on what? Well, based on content expressed through the provided API. So far, that is the following:
+// UIElement
+// - constructor(div, label) : UIElement
+// - createChild() : UIElement
+// - createChildren() : []UIElement
+// - verticalSplit([]rowsInfo) : []UIElement
+// - horizontalSplit([]colsInfo) : []UIElement
+// - expandToWindow() : void
+// - getLabel(), setLabel()
+// - getText(), setText()
+// - getDiv(), setDiv()
+// - addDiv()
+
+// Parents keep a list of their children.
+// We create corresponding DOM elements for each of our elements.
+// We can access all the DOM functionality through the DOM element,
+// exposed via getDiv().
+
+// So what do we have? An entity with properties 'label' and 'text';
+// it can have any number of children, but must choose a single method for doing so.
+// Current choice is between 'vertical split' and 'horizontal split'.
+// In either case, the size and number of splits is arbitrary.
+
+
 
 </script>
 
