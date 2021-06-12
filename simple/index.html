@@ -4,66 +4,107 @@
 <meta charset="utf-8"/>
 </head>
 <body>
-<div id="display" style="position: absolute; top: 10em;"></div>
+<div id="display"></div>
 </body>
 <script>
 
 class UIElement {
-  constructor(div) {
+  constructor(div, label) {
     this.children = [];
 
     if (div) {
       if (typeof div == 'string') {
-        this.div = document.getElementById(div);
+        this.setDiv(document.getElementById(div));
       } else {
-        this.div = div;
+        this.setDiv(div);
       }
     } else {
-      this.div = document.createElement('div');
+      this.setDiv(document.createElement('div'));
     }
 
-    // For now, we make assumptions here about our contents
+    // Helper to generate div wrappers
+    const divWrap = (element, style) => {
+      const wrapperDiv = document.createElement('div');
+      wrapperDiv.append(element);
+      Object.assign(wrapperDiv.style, style);
+      return wrapperDiv;
+    }
+
+    // Let's have a div to wrap our own content
+    this.headerDiv = document.createElement('div');
+    this.headerDiv.style.position = 'relative';
+    this.getDiv().append(this.headerDiv);
+
+    // Let's show a label, if present
+    this.labelP = document.createElement('p');
+    Object.assign(this.labelP.style, {
+      'font-size': '8pt',
+      color: '#888888',
+      position: 'absolute',
+      // border: '1px red solid',
+      top: '-2.5em',
+      width: '20em',
+    });
+    this.headerDiv.append(this.labelP);
+    if (label) {
+      this.setLabel(label);
+    }
 
     // Have a text value in addition to other possible children
-    // Wrap it in a div for good measure
     this.p = document.createElement('p');
-    const pdiv = document.createElement('div');
-    pdiv.append(this.p);
-    this.div.append(pdiv);
+    this.headerDiv.append(this.p);
 
     // Let's also have a div to wrap our children
-    const cdiv = document.createElement('div');
-    this.div.append(cdiv);
-
-    // For now, establish conventions by defining some of our parameters here.
-    this.conventions = {
-      // gravityDirection: 'left',
-    };
+    this.setChildrenDiv(document.createElement('div'));
+    this.getChildrenDiv().style.position = 'relative';
+    this.addDiv(this.getChildrenDiv());
 
     // To actually evaluate placements we may need some context.
     // I guess we can introspect our own bounding box.
     // We can also track changes of our children's properties, and
     // recompute layouts and/or notify children of the need to recompute.
+    this.getDiv().style.position = 'absolute';
+    this.getDiv().style.border = '1px #bbbbbb dotted';
 
-    this.div.style.position = 'absolute';
-    this.div.style.border = '1px #888888 solid';
-    this.div.width = '50em';
-    // this.div['max-width'] = '300';
-    // this.div.height = '100';
+    //////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////
+
+    // For now, establish conventions by defining some of our parameters here.
+    this.conventions = {
+      // gravityDirection: 'left',
+    };
+    // So far we have for each UIElement:
+    // label, text, children
+    // We will likely be adding more properties.
+    // Think about how we want to support this: what kinds of properties do we need; what is the desired workflow for
+    // adding them; how can we import/export elements (save/load, serialize/deserialize, marshall/unmarshall);
+    // rendering; evaluating; referencing; indexing; etc.
+    this.properties = {
+      children: [],
+      label: null,
+      text: null,
+      layoutProperties: null, // member of split group; position; etc.
+    };
   }
 
-  createChild(label) {
-    // We want to return a handle like our own,
-    // but initialized with the child as the root.
-    // For now, the child will have no access to the parent; it will be a one-way relationship.
-    const child = new UIElement();
-    this.children.push(child);
-    // Need to tie the DOM together as well
-    this.div.append(child.div);
-    // See what we can do to support positioning
-    // Override default 'relative' positioning
-    // child.div.style.position = 'absolute';
-    return child;
+  getChildrenDiv() {
+    return this.childrenDiv;
+  }
+
+  setChildrenDiv(div) {
+    this.childrenDiv = div;
+  }
+
+  getDiv() {
+    return this.div;
+  }
+
+  setDiv(div) {
+    this.div = div;
+  }
+
+  addDiv(div) {
+    this.getDiv().append(div);
   }
 
   setText(text) {
@@ -75,75 +116,97 @@ class UIElement {
     return this.p.innerText;
   }
 
-  /* Commenting this out, as I'm using another approach for now
-  // Accept expression that we can use to compute the placement of this element.
-  function setPlacement(expr) {
-    // shall the expression depend on some dynamic values?
-    // let's look for the right place to evaluate this expression.
-    this.placementExpression = expr;
-    // Let's take a stab at an implementation here.
-    // {left, above, right, below} = expr;
-    // Each direction is an object
-    // Ultimately we want to know what's going on in each of these directions.
-    // Maybe we'll add diagonals or other dimensions.
-    // We want to be able to specify some conventions, so let's do that elsewhere in this class, and reference it here.
-    ['left', 'above', 'right', 'below'].forEach(direction => {
-      const {} = expr[direction]
-    });
+  getLabel() {
+    return this.label;
   }
-  */
 
-  verticalSplit(rowsInfoArray) {
-    const nRows = rowsInfoArray.length;
-    return rowsInfoArray.map((rowInfo, rowIndex) => {
-      // Create a div as a child.
-      // TODO: Store info that we can use to (re)compute the resulting layout properties.
-      // For now, just set the properties
-      const child = this.createChild();
-      // Tell this child where to exist.
-      if (rowIndex > 0) {
-        child.div.style.top = rowsInfoArray[rowIndex - 1];
-      }
+  setLabel(label) {
+    this.label = label;
+    this.labelP.innerText = this.getLabel();
+  }
+
+  expandToWindow() {
+    const margin = 50;
+    this.getDiv().style.width = (window.innerWidth - 2 * margin) + 'px';
+    this.getDiv().style.height = (window.innerHeight - 2 * margin) + 'px';
+    this.getDiv().style.left = margin + 'px';
+    this.getDiv().style.top = margin + 'px';
+  }
+
+  createChild() {
+    // We want to return a handle like our own, but
+    // initialized with the child as the root.
+    // For now, the child will have no access to the parent;
+    // it will be a one-way relationship.
+    const child = new UIElement();
+    child.getDiv().style.position = 'absolute';
+    this.children.push(child);
+    // Need to tie the DOM together as well
+    this.getChildrenDiv().append(child.getDiv());
+    return child;
+  }
+
+
+  createChildren(infoArray, configureChild) {
+    return infoArray.map((info, index) => {
+      return this.createChild();
+    }).map((child, index, children) => {
+      configureChild(child, index, children);
       return child;
     });
   }
 
-  horizontalSplit(colsInfoArray) {
-    // const nCols = colsInfoArray.length;
-    return colsInfoArray.map((colInfo, colIndex) => {
-      // Create a div as a child.
-      // TODO: Store info that we can use to (re)compute the resulting layout properties.
-      // For now, just set the properties
-      console.log(`horizontalSplit: attempting to create child ${colIndex + 1}`);
-      const child = this.createChild();
-      // Tell this child where to exist.
-      if (colIndex > 0) {
-        child.div.style.left = colsInfoArray[colIndex - 1];
-      }
-      return child;
+  verticalSplit(infoArray) {
+    let offset = 0;
+    return this.createChildren(infoArray, (child, index, children) => {
+      // We want this child to start where its predecessor ends
+      child.getDiv().style.top = offset + 'px';
+      child.getDiv().style.height = infoArray[index];
+      child.getDiv().style.width = '100%';
+      child.setLabel(`verticalSplit ${index}`);
+      offset += child.getDiv().offsetHeight;
+    });
+  }
+
+  horizontalSplit(infoArray) {
+    let offset = 0;
+    return this.createChildren(infoArray, (child, index, children) => {
+      child.getDiv().style.left = offset + 'px';
+      child.getDiv().style.width = infoArray[index];
+      child.setLabel(`horizontalSplit ${index}`);
+      offset += child.getDiv().offsetWidth;
     });
   }
 }
 
-/*
-const a = new UIElement('display1');
-setTimeout(() => {
-  a.setText('hello');
-}, 2000);
-*/
-
-
 // Example
-const webPage = new UIElement('display');
-const [titleBar, body] = webPage.verticalSplit(['6em', '*']);
-const columns = body.horizontalSplit(['30em', '60em', '*']);
+const webPage = new UIElement('display', 'main');
+webPage.expandToWindow();
+const [titleBar, body] = webPage.verticalSplit(['10em', undefined]);
+const columns = body.horizontalSplit(['30em', '30em', undefined]);
+const rows2 = columns[1].verticalSplit(['20em', undefined]);
 
 titleBar.setText('Title Bar');
 body.setText('Body');
 columns.map((col, idx) => {
-  console.log(`${idx}:`, col);
   col.setText(`Column ${idx}`);
 });
+rows2.map((row, idx) => {
+  row.setText(`Column 2 Row ${idx}`);
+});
+
+setTimeout(() => {
+  body.setText(body.getText() + ' ...Hello!');
+}, 2000);
+
+
+
+// Let's support a grid layout system...
+// That can be done by creating horizontal and vertical subdivisions, right?
+
+// Also there are a couple more considerations to make for these UIElement boxes.
+// How big do we want them?
+// Not just shrinking to fit contents
 
 </script>
 
