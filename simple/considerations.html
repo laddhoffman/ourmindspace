@@ -3,11 +3,30 @@
 <head>
 <meta charset="utf-8"/>
 <script src="./uielement.js"></script>
+<script src="./transport.js"></script>
+<script src="./json-logic.js"></script>
 </head>
 <body>
 <div id="display"></div>
 </body>
 <script>
+
+const transport = new TransportLayer();
+
+function containsPoint(rect, point) {
+  return point.left >= rect.left && 
+    point.left <= rect.left + rect.width &&
+    point.top >= rect.top && 
+    point.top <= rect.top + rect.height;
+}
+function getCorners(rect) {
+  return [
+    {left: rect.left, top: rect.top},
+    {left: rect.left + rect.width, top: rect.top},
+    {left: rect.left, top: rect.top + rect.height},
+    {left: rect.left + rect.width, top: rect.top + rect.height},
+  ];
+}
 
 class Store extends Map {
   get(collection, key) {
@@ -35,55 +54,12 @@ class Store extends Map {
 class Collection extends Map {
 }
 
-// The interface we'll use to communicate with peers
-class CommsInterface {
-  send(peer) {
-  }
-  advertise() {
-  }
-}
-
-// Let's consider a Peer to be an entity with which we can send and receive messages.
-class Peer {
-}
-
-// Transport layer needs to provide addressability, routing, send, receive
-// This will need to be implemented
-// It's separated here because this is a portion of the system that would change depending on specific application
-// contexts.
-class _TransportLayer {
-  constructor() {
-    this.listeners = new Map();
-  }
-  listen(address, callback) {
-    if (this.listeners.has(address)) {
-      throw new Error('max 1 listener per address');
-    }
-    this.listeners.set(address, callback);
-  }
-  send(address, msg, callback) {
-    const listener = this.listeners.get(address);
-    if (!listener) {
-      throw new Error(`destination address ${address} not found`);
-    }
-    const response = listener(msg);
-    callback(response);
-  }
-  list() {
-    return Array.from(this.listeners.keys());
-  }
-}
-
-const transport = new _TransportLayer();
-
 class Entity extends UIElement {
   constructor(div, address) {
     super(div);
     this.stores = {
       fastmem: new Store(),
     };
-    this.considerations = [];
-
     this.setAddress(address);
   }
 
@@ -96,17 +72,98 @@ class Entity extends UIElement {
     // Register the address with transport layer
     transport.listen(address, msg => {
       // Dispatch message to appropriate handler
+      return this.message(msg);
     });
     // As a side-effect, copy this to our label
-    this.setLabel(`address: ${address}`);
+    this.setLabel(`#${address}`);
   }
 
-  findOthers() {
+  getOffset() {
+    return {
+      left: this.getDiv().offsetLeft,
+      top: this.getDiv().offsetTop,
+      width: this.getDiv().offsetWidth,
+      height: this.getDiv().offsetHeight,
+    };
+  }
+
+  findAllOthers() {
     // How do we want to find other elements?
     // If a group of elements is started with a common purpose,
     // they can be equipped with a mechanism to message one another.
     // That could be enough to get us started.
     return transport.list().filter(x => x !== this.address);
+  }
+
+  avoidAllOthers() {
+    // Move to avoid covering any other entity.
+    const coveredAreas = [];
+    this.findAllOthers().forEach(address => {
+      const query = {var: 'offset'};
+      transport.send(address, {query}, response => {
+        const {left, top, width, height} = response;
+        coveredAreas.push({left, top, width, height});
+      });
+    });
+    // Because of how we've implemented this, it's currently synchronous;
+    // Really we'll need an `await` here.
+
+    // Ok now we know where everyone else is.
+    // First let's check whether we are overlapping with anyone.
+    // That means, is anyone's corner in our space, or are any of our corners in their space?
+    const overlapping = coveredAreas.some(area => {
+      const othersCornersFound = getCorners(area).some(point => {
+        return containsPoint(this.getOffset(), point);
+      });
+      const ourCornersFound = getCorners(this.getOffset()).some(point => {
+        return containsPoint(area, point);
+      });
+      return othersCornersFound || ourCornersFound;
+    });
+
+    if (!overlapping) {
+      // Nothing to do; not overlapping
+      return;
+    }
+
+    // Let's find an out-of-the-way place for ourself.
+    // One way to do this would be to randomly move until we're clear.
+    // Another would be to methodically scan in a range of directions.
+
+    // It could be useful to be able to expand in any direction. For example move everything to the right to
+    // create more space on the left.
+    // We can do this by broadcasting a message requesting each entity to move itself.
+    const margin = 10;
+    const targetSide = Math.random() > 0.5 ? 'left' : 'right';
+    switch (targetSide) {
+      case 'right': 
+        const rightmost = coveredAreas.reduce((max, cur) => {
+          const val = cur.left + cur.width;
+          return Math.max(val, max);
+        }, 0);
+        this.getDiv().style.left = (rightmost + margin) + 'px';
+        break;
+      case 'left': 
+        this.requestAllOthersShift(this.getDiv().offsetWidth + margin, 0);
+        break;
+    }
+
+    // What could also be nice is to generate a map of uncovered spaces.
+    // Then we could just pick a space from that list.
+    
+    // When we get to the point where we have filled up the available space we'll need to do something. Maybe we
+    // minimize overlap instead of disallowing it completely. Maybe we shake things around to try to consolidate 
+    // smaller empty spaces into larger ones.
+
+  }
+
+  requestAllOthersShift(left, top) {
+    this.findAllOthers().forEach(address => {
+      const request = {shift: {left, top}};
+      transport.send(address, {request}, response => {
+        // console.log(`response from ${address}:`, response);
+      });
+    });
   }
 
   learnConsideration(consideration) {
@@ -155,25 +212,37 @@ class Entity extends UIElement {
     //   - Await other asynchronous events (or treat everything as a message)
     //   - Perform any further actions on behalf of these messages or other considerations
 
-    msg.considerations.forEach(id => {
-      if (!this.stores.fastmem.has('considerations', id)) {
-        // First time we've seen this recently.
-        // It's possible we have more information available if we make some queries.
-        // We probably want to form a rank estimate, and form a plan of action.
-        // It's possible that we could revise the plan in the future, and/or that the plan encodes some complexity
-        // regarding how it will respond to future conditions.
-        // Anyway, just go ahead and store it.
-        this.stores.fastmem.set(considerations, id, msg.considerations[id]);
-      }
-      const c = this.stores.fastmem.get('considerations', id);
-    });
-
-    if (msg.consideration) {
-      this.learnConsideration(msg.consideration);
+    if (msg.considerations) {
+      msg.considerations.forEach(id => {
+        if (!this.stores.fastmem.has('considerations', id)) {
+          // First time we've seen this recently.
+          // It's possible we have more information available if we make some queries.
+          // We probably want to form a rank estimate, and form a plan of action.
+          // It's possible that we could revise the plan in the future, and/or that the plan encodes some complexity
+          // regarding how it will respond to future conditions.
+          // Anyway, just go ahead and store it.
+          this.stores.fastmem.set(considerations, id, msg.considerations[id]);
+        }
+        const c = this.stores.fastmem.get('considerations', id);
+      });
     }
 
-    if (msg.body) {
-      
+    if (msg.query) {
+      // Let's use jsonLogic to evaluate this.
+      // We'll explicitly expose here whatever content we want to make available.
+      const context = {
+        offset: this.getOffset(),
+      };
+      const result = jsonLogic.apply(msg.query, context);
+      return result;
+    }
+
+    if (msg.request) {
+      if (msg.request.shift) {
+        this.getDiv().style.left = (this.getDiv().offsetLeft + msg.request.shift.left) + 'px';
+        this.getDiv().style.top = (this.getDiv().offsetTop + msg.request.shift.top) + 'px';
+        return true;
+      }
     }
   }
 }
@@ -191,6 +260,9 @@ x2.setText('TWO');
 const x3 = addElement(3);
 x3.setText('THREE');
 
-console.log(x1.findOthers());
+x1.avoidAllOthers();
+x2.avoidAllOthers();
+x3.avoidAllOthers();
+
 
 </script>
