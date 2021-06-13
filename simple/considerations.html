@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<script src="./uielement.js"></script>
+</head>
+<body>
+<div id="display"></div>
+</body>
+<script>
+
+class Store extends Map {
+  get(collection, key) {
+    this.assertCollection(collection);
+    return this.get(collection).get(key);
+  }
+  set(collection, key, value) {
+    this.assertCollection(collection);
+    return super.get(collection).set(key, value);
+  }
+  has(collection, key) {
+    this.assertCollection(collection);
+    return this.get(collection).has(key);
+  }
+  assertCollection(collection) {
+    if (!this.has(collection)) {
+      this.set(collection, new Collection());
+    }
+  }
+  listCollections() {
+    return Array.from(this.keys());
+  }
+}
+
+class Collection extends Map {
+}
+
+// The interface we'll use to communicate with peers
+class CommsInterface {
+  send(peer) {
+  }
+  advertise() {
+  }
+}
+
+// Let's consider a Peer to be an entity with which we can send and receive messages.
+class Peer {
+}
+
+// Transport layer needs to provide addressability, routing, send, receive
+// This will need to be implemented
+// It's separated here because this is a portion of the system that would change depending on specific application
+// contexts.
+class _TransportLayer {
+  constructor() {
+    this.listeners = new Map();
+  }
+  listen(address, callback) {
+    if (this.listeners.has(address)) {
+      throw new Error('max 1 listener per address');
+    }
+    this.listeners.set(address, callback);
+  }
+  send(address, msg, callback) {
+    const listener = this.listeners.get(address);
+    if (!listener) {
+      throw new Error(`destination address ${address} not found`);
+    }
+    const response = listener(msg);
+    callback(response);
+  }
+  list() {
+    return Array.from(this.listeners.keys());
+  }
+}
+
+const transport = new _TransportLayer();
+
+class Entity extends UIElement {
+  constructor(div, address) {
+    super(div);
+    this.stores = {
+      fastmem: new Store(),
+    };
+    this.considerations = [];
+
+    this.setAddress(address);
+  }
+
+  getAddress() { return this.address };
+  setAddress(address) {
+    if (this.getAddress()) {
+      throw new Error('address already set; changing addresses not currently supported');
+    }
+    this.address = address;
+    // Register the address with transport layer
+    transport.listen(address, msg => {
+      // Dispatch message to appropriate handler
+    });
+    // As a side-effect, copy this to our label
+    this.setLabel(`address: ${address}`);
+  }
+
+  findOthers() {
+    // How do we want to find other elements?
+    // If a group of elements is started with a common purpose,
+    // they can be equipped with a mechanism to message one another.
+    // That could be enough to get us started.
+    return transport.list().filter(x => x !== this.address);
+  }
+
+  learnConsideration(consideration) {
+    this.considerations.push(consideration);
+
+    // What structure do we expect here?
+    // Generally, some expression or expressions we can evaluate.
+    // I suppose it's really up to us to determine what kind of expressions we'll accept.
+    // I think what we want to do is accept expressions of the following form:
+    // (Condition, Effect). We'll evaluate conditions and try to keep track of the effects produced. Effects can cause conditions, so there may need to be some reevaluation as well. 
+    // We don't need to know all the possible conditions ahead of time, if we allow some kind of dynamic/forward
+    // reference. 
+    // Sounds like a system that lets you write programs with side-effects.
+    // Is there a functional way to write these instead?
+    // What about "constraint" expressions?
+    // Maybe each consideration articulates some invariant.
+    // As follows:
+    // (A condition is met; say an event has occurred) 
+    // (some duration has elapsed, more than a grace period but less than a timeout) 
+    // (we have performed some action in response to the event)
+    //
+
+    // State snapshotting and event streaming are powerful features.
+    // I would like to implement them in this system I'm building here, if not now then soon-ish.
+  }
+
+  message(msg) {
+    // See if we can infer considerations from this message,
+    // using what other context we have available, such as 
+    // from other messages, or other asynchronous processes.
+    // If so, then do our best to learn the implied considerations.
+
+    // How shall we go about this?
+    // Let's start simple. We'll define a message schema to let people
+    // tell us their considerations.
+    // It can be in this form:
+    // I care about the result of evaluating the following expression:
+    //   < Expression that references any available operations we support >
+    // We do the following:
+    //   - Reference immediately available memory
+    //   - Perform any necessary actions based on knowledge available at this time
+    //   - Acknowledge receipt of request
+    //   - Perform any further actions on behalf of this message
+    //   - Perform any further actions on behalf of other considerations
+    //   - Await further messages
+    //   - Await other asynchronous events (or treat everything as a message)
+    //   - Perform any further actions on behalf of these messages or other considerations
+
+    msg.considerations.forEach(id => {
+      if (!this.stores.fastmem.has('considerations', id)) {
+        // First time we've seen this recently.
+        // It's possible we have more information available if we make some queries.
+        // We probably want to form a rank estimate, and form a plan of action.
+        // It's possible that we could revise the plan in the future, and/or that the plan encodes some complexity
+        // regarding how it will respond to future conditions.
+        // Anyway, just go ahead and store it.
+        this.stores.fastmem.set(considerations, id, msg.considerations[id]);
+      }
+      const c = this.stores.fastmem.get('considerations', id);
+    });
+
+    if (msg.consideration) {
+      this.learnConsideration(msg.consideration);
+    }
+
+    if (msg.body) {
+      
+    }
+  }
+}
+
+const display = document.getElementById('display');
+function addElement(address) {
+  const element = new Entity(null, address);
+  display.append(element.getDiv());
+  return element;
+}
+const x1 = addElement(1);
+x1.setText('ONE');
+const x2 = addElement(2);
+x2.setText('TWO');
+const x3 = addElement(3);
+x3.setText('THREE');
+
+console.log(x1.findOthers());
+
+</script>
