@@ -5,6 +5,7 @@
 <script src="./uielement.js"></script>
 <script src="./transport.js"></script>
 <script src="./json-logic.js"></script>
+<script src="./uuid.js"></script>
 </head>
 <body>
 <div id="display"></div>
@@ -13,25 +14,34 @@
 
 const transport = new TransportLayer();
 
-function containsPoint(rect, point) {
+function rectangleContainsPoint(rect, point) {
   return point.left >= rect.left && 
     point.left <= rect.left + rect.width &&
     point.top >= rect.top && 
     point.top <= rect.top + rect.height;
 }
-function getCorners(rect) {
+function getRectangleCorners(rect) {
   return [
     {left: rect.left, top: rect.top},
-    {left: rect.left + rect.width, top: rect.top},
     {left: rect.left, top: rect.top + rect.height},
+    {left: rect.left + rect.width, top: rect.top},
     {left: rect.left + rect.width, top: rect.top + rect.height},
   ];
+}
+function rectanglesIntersect(rect1, rect2) {
+  const rect1CornersInRect2 = getRectangleCorners(rect1).some(point => {
+    return rectangleContainsPoint(rect2, point);
+  });
+  const rect2CornersInRect1 = getRectangleCorners(rect2).some(point => {
+    return rectangleContainsPoint(rect1, point);
+  });
+  return rect1CornersInRect2 || rect2CornersInRect1;
 }
 
 class Store extends Map {
   get(collection, key) {
     this.assertCollection(collection);
-    return this.get(collection).get(key);
+    return super.get(collection).get(key);
   }
   set(collection, key, value) {
     this.assertCollection(collection);
@@ -39,11 +49,11 @@ class Store extends Map {
   }
   has(collection, key) {
     this.assertCollection(collection);
-    return this.get(collection).has(key);
+    return super.get(collection).has(key);
   }
   assertCollection(collection) {
-    if (!this.has(collection)) {
-      this.set(collection, new Collection());
+    if (!super.has(collection)) {
+      super.set(collection, new Collection());
     }
   }
   listCollections() {
@@ -61,7 +71,11 @@ class Entity extends UIElement {
       fastmem: new Store(),
     };
     this.setAddress(address);
+    this.setId(createUUID());
   }
+  
+  setId(id) { this.id = id; }
+  getId() { return this.id; }
 
   getAddress() { return this.address };
   setAddress(address) {
@@ -70,7 +84,8 @@ class Entity extends UIElement {
     }
     this.address = address;
     // Register the address with transport layer
-    transport.listen(address, msg => {
+    console.log(`${this.getAddress()}, binding to address ${address}`);
+    this.transport = transport.bind(this, address, msg => {
       // Dispatch message to appropriate handler
       return this.message(msg);
     });
@@ -97,12 +112,13 @@ class Entity extends UIElement {
 
   avoidAllOthers() {
     // Move to avoid covering any other entity.
-    const coveredAreas = [];
+    const coveredAreas = {};
     this.findAllOthers().forEach(address => {
-      const query = {var: 'offset'};
-      transport.send(address, {query}, response => {
-        const {left, top, width, height} = response;
-        coveredAreas.push({left, top, width, height});
+      const msg = {query: {var: 'offset'}};
+      console.log(`${this.getAddress()}, avoidAllOthers querying ${address}`);
+      this.transport.send(address, msg, response => {
+        const {left, top, width, height} = response.data;
+        coveredAreas[address] = ({left, top, width, height});
       });
     });
     // Because of how we've implemented this, it's currently synchronous;
@@ -111,41 +127,56 @@ class Entity extends UIElement {
     // Ok now we know where everyone else is.
     // First let's check whether we are overlapping with anyone.
     // That means, is anyone's corner in our space, or are any of our corners in their space?
-    const overlapping = coveredAreas.some(area => {
-      const othersCornersFound = getCorners(area).some(point => {
-        return containsPoint(this.getOffset(), point);
-      });
-      const ourCornersFound = getCorners(this.getOffset()).some(point => {
-        return containsPoint(area, point);
-      });
-      return othersCornersFound || ourCornersFound;
-    });
 
-    if (!overlapping) {
-      // Nothing to do; not overlapping
-      return;
+    function overlapping() {
+      const result = Object.values(coveredAreas).some(area => {
+        return rectanglesIntersect(area, this.getOffset());
+      });
+      console.log(`${this.getAddress()}, ${JSON.stringify(this.getOffset())}, overlapping: ${result}`);
+      return result;
     }
 
-    // Let's find an out-of-the-way place for ourself.
-    // One way to do this would be to randomly move until we're clear.
-    // Another would be to methodically scan in a range of directions.
-
-    // It could be useful to be able to expand in any direction. For example move everything to the right to
-    // create more space on the left.
-    // We can do this by broadcasting a message requesting each entity to move itself.
-    const margin = 10;
+    const padding = 10;
     const targetSide = Math.random() > 0.5 ? 'left' : 'right';
-    switch (targetSide) {
-      case 'right': 
-        const rightmost = coveredAreas.reduce((max, cur) => {
-          const val = cur.left + cur.width;
-          return Math.max(val, max);
-        }, 0);
-        this.getDiv().style.left = (rightmost + margin) + 'px';
-        break;
-      case 'left': 
-        this.requestAllOthersShift(this.getDiv().offsetWidth + margin, 0);
-        break;
+    while (overlapping.apply(this)) {
+      console.log(`${this.getAddress()}, target side: ${targetSide}`);
+      switch (targetSide) {
+        case 'right': 
+          console.log(`${this.getAddress()}, moving to the rightmost position`);
+          const rightmost = Object.values(coveredAreas).reduce((max, cur) => {
+            const val = cur.left + cur.width;
+            return Math.max(val, max);
+          }, 0);
+          this.getDiv().style.left = (rightmost + padding) + 'px';
+          continue;
+        case 'left': 
+          const leftmost = Object.values(coveredAreas).reduce((min, cur) => {
+            const val = cur.left;
+            if (min === null) {
+              return val;
+            }
+            return Math.min(val, min);
+          }, null);
+          // If there's room, just move to the left.
+          // Otherwise, request all other entities to move to the right.
+          const spaceAvailableLeft = this.getDiv().offsetLeft;
+          if (spaceAvailableLeft > 0) {
+            console.log(`${this.getAddress()}, moving to the left`);
+            this.getDiv().style.left = (this.getDiv().offsetLeft - spaceAvailableLeft) + 'px';
+          }
+          const spaceAvailableRight = leftmost - this.getDiv().offsetLeft - this.getDiv().offsetWidth - padding;
+          if (spaceAvailableRight < 0) {
+            console.log(`${this.getAddress()}, asking everyone else to move to our right`);
+            this.requestAllOthersToShift(-spaceAvailableRight, 0, 
+              response => {
+                const address = response.header.src;
+                const {left, top, width, height} = response.data;
+                console.log(`got response from ${address}: ${JSON.stringify(response.data)}`);
+                coveredAreas[address] = ({left, top, width, height});
+              });
+          }
+          continue;
+      }
     }
 
     // What could also be nice is to generate a map of uncovered spaces.
@@ -155,15 +186,64 @@ class Entity extends UIElement {
     // minimize overlap instead of disallowing it completely. Maybe we shake things around to try to consolidate 
     // smaller empty spaces into larger ones.
 
+    // It could be useful to be able to expand in any direction. For example move everything to the right to
+    // create more space on the left. [Implemented as requestOtherToShift() and requestAllOthersToShift().]
+
+    // Another strategy we can try is we can do the following:
+    // - decide where we want to be
+    // - come up with proposed modifications to the positions of other entities
+    // - request the other entities to move in the proposed ways
+    // - occupy our new position
+
+    // We can combine these approaches
+    // Does this need to be recursive?
+    // If so, can we provide any bounds for the stack depth? And/or do we have tail-call optimization?
+
+    // Let's try a multi-pass approach.
+    // First, look for nearby holes. We can do this via binary search along some vectors.
+    // Maybe keep going until we find at least one hole; Maybe keep going longer (part of a separate routine probably)
+    // as a means of mapping out the space, e.g. in preparation for trying to place multiple entities.
+    // Once we do or do not find any nearby holes, next test a plan where we ask everyone to move directly away from
+    // us. If we ask everyone to move along a particular vector, it's the same operation as moving ourselves combined
+    // with effectively shifting the position of the origin.
+    // If we however ask everyone to move along distinct vectors, this is potentially a very different kind of
+    // operation. It can be designed according to any mapping we desire.
+    // The other entities won't necessarily know 
+
+
   }
 
-  requestAllOthersShift(left, top) {
-    this.findAllOthers().forEach(address => {
-      const request = {shift: {left, top}};
-      transport.send(address, {request}, response => {
-        // console.log(`response from ${address}:`, response);
-      });
+  requestOtherToShift(address, left, top, callback) {
+    const msg = {
+      request: {
+        shift: {left, top}
+      },
+      query: {
+        var: 'offset'
+      },
+    };
+    this.transport.send(address, msg, response => {
+      // console.log(`response from ${address}:`, response);
+      callback(response);
     });
+  }
+
+  requestAllOthersToShift(left, top, callback) {
+    this.findAllOthers().forEach(address => {
+      this.requestOtherToShift(address, left, top, callback);
+    });
+  }
+
+  askToBeConsidered(address) {
+    const msg = {
+      considerations: {
+        [this.getId()]: {
+          overlap: 'avoid',
+          address: this.getId()
+        },
+      },
+    };
+    this.transport.send(address, msg);
   }
 
   learnConsideration(consideration) {
@@ -191,6 +271,10 @@ class Entity extends UIElement {
   }
 
   message(msg) {
+    console.log(`${this.getAddress()}, received message`, msg);
+    if (msg.header.dst !== this.getAddress()) {
+      throw new Error(`${this.getAddress()} received message destined for ${msg.header.dst}`);
+    }
     // See if we can infer considerations from this message,
     // using what other context we have available, such as 
     // from other messages, or other asynchronous processes.
@@ -213,7 +297,7 @@ class Entity extends UIElement {
     //   - Perform any further actions on behalf of these messages or other considerations
 
     if (msg.considerations) {
-      msg.considerations.forEach(id => {
+      Object.keys(msg.considerations).forEach(id => {
         if (!this.stores.fastmem.has('considerations', id)) {
           // First time we've seen this recently.
           // It's possible we have more information available if we make some queries.
@@ -221,10 +305,18 @@ class Entity extends UIElement {
           // It's possible that we could revise the plan in the future, and/or that the plan encodes some complexity
           // regarding how it will respond to future conditions.
           // Anyway, just go ahead and store it.
-          this.stores.fastmem.set(considerations, id, msg.considerations[id]);
+          this.stores.fastmem.set('considerations', id, msg.considerations[id]);
         }
         const c = this.stores.fastmem.get('considerations', id);
+        console.log('consideration:', c);
       });
+    }
+
+    if (msg.request) {
+      if (msg.request.shift) {
+        this.getDiv().style.left = (this.getDiv().offsetLeft + msg.request.shift.left) + 'px';
+        this.getDiv().style.top = (this.getDiv().offsetTop + msg.request.shift.top) + 'px';
+      }
     }
 
     if (msg.query) {
@@ -237,15 +329,43 @@ class Entity extends UIElement {
       return result;
     }
 
-    if (msg.request) {
-      if (msg.request.shift) {
-        this.getDiv().style.left = (this.getDiv().offsetLeft + msg.request.shift.left) + 'px';
-        this.getDiv().style.top = (this.getDiv().offsetTop + msg.request.shift.top) + 'px';
-        return true;
-      }
-    }
+    // If we haven't already replied, return true here as an ack
+    return true;
   }
 }
+
+// Tests
+
+{
+  const point = {left: 1, top: 1};
+  const rect = {left: 0, top: 0, width: 2, height: 2};
+  const result = rectangleContainsPoint(rect, point);
+  if (!result) {
+    throw new Error('test failed');
+  }
+}
+
+{
+  const rect = {left: 0, top: 0, width: 2, height: 2};
+  const result = getRectangleCorners(rect);
+  if (result[0].left != 0 || result[0].top != 0 ||
+    result[1].left != 0 || result[1].top != 2 ||
+    result[2].left != 2 || result[2].top != 0 ||
+    result[3].left != 2 || result[3].top != 2) {
+    throw new Error('test failed');
+  }
+}
+
+{
+  const rect1 = {left: 0, top: 0, width: 20, height: 10};
+  const rect2 = {left: 5, top: 0, width: 10, height: 10};
+  const result = rectanglesIntersect(rect1, rect2);
+  if (!result) {
+    throw new Error('test failed');
+  }
+}
+
+// Example
 
 const display = document.getElementById('display');
 function addElement(address) {
@@ -256,13 +376,18 @@ function addElement(address) {
 const x1 = addElement(1);
 x1.setText('ONE');
 const x2 = addElement(2);
-x2.setText('TWO');
+x2.setText('TWO TWO');
 const x3 = addElement(3);
-x3.setText('THREE');
+x3.setText('THREE THREE THREE');
+
+console.log('transport, address list', transport.list());
 
 x1.avoidAllOthers();
 x2.avoidAllOthers();
 x3.avoidAllOthers();
 
+// x1.askToBeConsidered(x2.getAddress());
+
+// Another strategy would be to form partnerships among entities, and have them use that to help them self-organize.
 
 </script>
