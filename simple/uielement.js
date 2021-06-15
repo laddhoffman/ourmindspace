@@ -12,6 +12,8 @@ class UIElement {
       this.setDiv(document.createElement('div'));
     }
 
+    this.getDiv().classList.add('entityRectangle');
+
     // Let's have a div to wrap our own content
     this.headerDiv = document.createElement('div');
     this.headerDiv.style.position = 'relative';
@@ -19,14 +21,7 @@ class UIElement {
 
     // Let's show a label, if present
     this.labelP = document.createElement('p');
-    Object.assign(this.labelP.style, {
-      'font-size': '8pt',
-      color: '#888888',
-      position: 'absolute',
-      // border: '1px red solid',
-      top: '-2.5em',
-      width: '20em',
-    });
+    this.labelP.classList.add('label');
     this.headerDiv.append(this.labelP);
     if (label) {
       this.setLabel(label);
@@ -45,8 +40,8 @@ class UIElement {
     // I guess we can introspect our own bounding box.
     // We can also track changes of our children's properties, and
     // recompute layouts and/or notify children of the need to recompute.
-    this.getDiv().style.position = 'absolute';
-    this.getDiv().style.border = '1px #bbbbbb dotted';
+
+    this.computedStyle = window.getComputedStyle(this.getDiv());
 
     //////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////
@@ -84,6 +79,37 @@ class UIElement {
   // Rely on innerText of <p> to store label
   getLabel() { return this.labelP.innerText; }
   setLabel(label) { this.labelP.innerText = label; }
+
+  getComputedStyle() { return this.computedStyle; }
+  getComputedStylePropertyNumeric(property) {
+    const value = this.getComputedStyle().getPropertyValue(property);
+    return parseInt(value);
+  }
+
+  getRectangle() {
+    // Let's also include padding here
+    return {
+      left: this.getComputedStylePropertyNumeric('left')
+        - this.getComputedStylePropertyNumeric('padding-left'),
+      top: this.getComputedStylePropertyNumeric('top')
+        - this.getComputedStylePropertyNumeric('padding-top'),
+      width: this.getComputedStylePropertyNumeric('width')
+        + this.getComputedStylePropertyNumeric('padding-left')
+        + this.getComputedStylePropertyNumeric('padding-right'),
+      height: this.getComputedStylePropertyNumeric('height')
+        + this.getComputedStylePropertyNumeric('padding-top')
+        + this.getComputedStylePropertyNumeric('padding-bottom'),
+    };
+  }
+
+  moveTo(left, top) {
+    if (left !== null) {
+      this.getDiv().style.left = (left + this.getComputedStylePropertyNumeric('padding-left')) + 'px';
+    }
+    if (top !== null) {
+      this.getDiv().style.top = (top + this.getComputedStylePropertyNumeric('padding-top')) + 'px';
+    }
+  }
 
   expandToWindow() {
     const margin = 50;
