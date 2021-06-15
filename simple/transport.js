@@ -13,7 +13,6 @@ class TransportLayer {
       throw new Error('max 1 listener per address');
     }
     this.listeners.set(address, callback.bind(entity));
-    console.log(`${entity.getAddress()}, TransportLayer bind to address ${address}`);
     return {
       send: (dstAddress, msg, callback) => {
         // callback return value will be used as reply

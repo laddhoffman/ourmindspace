@@ -6,6 +6,10 @@
 <script src="./transport.js"></script>
 <script src="./json-logic.js"></script>
 <script src="./uuid.js"></script>
+<script src="./store.js"></script>
+<script src="./debug.js"></script>
+<script src="./rectangle.js"></script>
+<link rel="stylesheet" type="text/css" href="./style.css" />
 </head>
 <body>
 <div id="display"></div>
@@ -13,56 +17,6 @@
 <script>
 
 const transport = new TransportLayer();
-
-function rectangleContainsPoint(rect, point) {
-  return point.left >= rect.left && 
-    point.left <= rect.left + rect.width &&
-    point.top >= rect.top && 
-    point.top <= rect.top + rect.height;
-}
-function getRectangleCorners(rect) {
-  return [
-    {left: rect.left, top: rect.top},
-    {left: rect.left, top: rect.top + rect.height},
-    {left: rect.left + rect.width, top: rect.top},
-    {left: rect.left + rect.width, top: rect.top + rect.height},
-  ];
-}
-function rectanglesIntersect(rect1, rect2) {
-  const rect1CornersInRect2 = getRectangleCorners(rect1).some(point => {
-    return rectangleContainsPoint(rect2, point);
-  });
-  const rect2CornersInRect1 = getRectangleCorners(rect2).some(point => {
-    return rectangleContainsPoint(rect1, point);
-  });
-  return rect1CornersInRect2 || rect2CornersInRect1;
-}
-
-class Store extends Map {
-  get(collection, key) {
-    this.assertCollection(collection);
-    return super.get(collection).get(key);
-  }
-  set(collection, key, value) {
-    this.assertCollection(collection);
-    return super.get(collection).set(key, value);
-  }
-  has(collection, key) {
-    this.assertCollection(collection);
-    return super.get(collection).has(key);
-  }
-  assertCollection(collection) {
-    if (!super.has(collection)) {
-      super.set(collection, new Collection());
-    }
-  }
-  listCollections() {
-    return Array.from(this.keys());
-  }
-}
-
-class Collection extends Map {
-}
 
 class Entity extends UIElement {
   constructor(div, address) {
@@ -73,7 +27,12 @@ class Entity extends UIElement {
     this.setAddress(address);
     this.setId(createUUID());
   }
-  
+
+  debug(tag, ...args) {
+    args[0] = `${this.getAddress()} ${args[0]}`;
+    debug(tag, ...args);
+  }
+
   setId(id) { this.id = id; }
   getId() { return this.id; }
 
@@ -84,7 +43,7 @@ class Entity extends UIElement {
     }
     this.address = address;
     // Register the address with transport layer
-    console.log(`${this.getAddress()}, binding to address ${address}`);
+    this.debug('transport', `binding to address ${address}`);
     this.transport = transport.bind(this, address, msg => {
       // Dispatch message to appropriate handler
       return this.message(msg);
@@ -115,7 +74,7 @@ class Entity extends UIElement {
     const coveredAreas = {};
     this.findAllOthers().forEach(address => {
       const msg = {query: {var: 'offset'}};
-      console.log(`${this.getAddress()}, avoidAllOthers querying ${address}`);
+      this.debug('positioning', `avoidAllOthers querying ${address}`);
       this.transport.send(address, msg, response => {
         const {left, top, width, height} = response.data;
         coveredAreas[address] = ({left, top, width, height});
@@ -128,28 +87,28 @@ class Entity extends UIElement {
     // First let's check whether we are overlapping with anyone.
     // That means, is anyone's corner in our space, or are any of our corners in their space?
 
-    function overlapping() {
-      const result = Object.values(coveredAreas).some(area => {
-        return rectanglesIntersect(area, this.getOffset());
+    const overlappingAnyOthers = () => {
+      const result = Object.values(coveredAreas).some(coveredArea => {
+        return rectanglesIntersect(coveredArea, this.getOffset());
       });
-      console.log(`${this.getAddress()}, ${JSON.stringify(this.getOffset())}, overlapping: ${result}`);
+      this.debug('positioning', `overlappingAnyOthers: ${result}`);
       return result;
-    }
+    };
 
     const padding = 10;
     const targetSide = Math.random() > 0.5 ? 'left' : 'right';
-    while (overlapping.apply(this)) {
-      console.log(`${this.getAddress()}, target side: ${targetSide}`);
+    while (overlappingAnyOthers()) {
       switch (targetSide) {
-        case 'right': 
-          console.log(`${this.getAddress()}, moving to the rightmost position`);
+        case 'right':
+          this.debug('positioning', `moving to the rightmost side`);
           const rightmost = Object.values(coveredAreas).reduce((max, cur) => {
             const val = cur.left + cur.width;
             return Math.max(val, max);
           }, 0);
           this.getDiv().style.left = (rightmost + padding) + 'px';
           continue;
-        case 'left': 
+        case 'left':
+          this.debug('positioning', `moving to the leftmost side`);
           const leftmost = Object.values(coveredAreas).reduce((min, cur) => {
             const val = cur.left;
             if (min === null) {
@@ -161,17 +120,14 @@ class Entity extends UIElement {
           // Otherwise, request all other entities to move to the right.
           const spaceAvailableLeft = this.getDiv().offsetLeft;
           if (spaceAvailableLeft > 0) {
-            console.log(`${this.getAddress()}, moving to the left`);
             this.getDiv().style.left = (this.getDiv().offsetLeft - spaceAvailableLeft) + 'px';
           }
           const spaceAvailableRight = leftmost - this.getDiv().offsetLeft - this.getDiv().offsetWidth - padding;
           if (spaceAvailableRight < 0) {
-            console.log(`${this.getAddress()}, asking everyone else to move to our right`);
-            this.requestAllOthersToShift(-spaceAvailableRight, 0, 
+            this.requestAllOthersToShift(-spaceAvailableRight, 0,
               response => {
                 const address = response.header.src;
                 const {left, top, width, height} = response.data;
-                console.log(`got response from ${address}: ${JSON.stringify(response.data)}`);
                 coveredAreas[address] = ({left, top, width, height});
               });
           }
@@ -181,9 +137,9 @@ class Entity extends UIElement {
 
     // What could also be nice is to generate a map of uncovered spaces.
     // Then we could just pick a space from that list.
-    
+
     // When we get to the point where we have filled up the available space we'll need to do something. Maybe we
-    // minimize overlap instead of disallowing it completely. Maybe we shake things around to try to consolidate 
+    // minimize overlap instead of disallowing it completely. Maybe we shake things around to try to consolidate
     // smaller empty spaces into larger ones.
 
     // It could be useful to be able to expand in any direction. For example move everything to the right to
@@ -208,7 +164,7 @@ class Entity extends UIElement {
     // with effectively shifting the position of the origin.
     // If we however ask everyone to move along distinct vectors, this is potentially a very different kind of
     // operation. It can be designed according to any mapping we desire.
-    // The other entities won't necessarily know 
+    // The other entities won't necessarily know
 
 
   }
@@ -223,7 +179,6 @@ class Entity extends UIElement {
       },
     };
     this.transport.send(address, msg, response => {
-      // console.log(`response from ${address}:`, response);
       callback(response);
     });
   }
@@ -253,16 +208,16 @@ class Entity extends UIElement {
     // Generally, some expression or expressions we can evaluate.
     // I suppose it's really up to us to determine what kind of expressions we'll accept.
     // I think what we want to do is accept expressions of the following form:
-    // (Condition, Effect). We'll evaluate conditions and try to keep track of the effects produced. Effects can cause conditions, so there may need to be some reevaluation as well. 
+    // (Condition, Effect). We'll evaluate conditions and try to keep track of the effects produced. Effects can cause conditions, so there may need to be some reevaluation as well.
     // We don't need to know all the possible conditions ahead of time, if we allow some kind of dynamic/forward
-    // reference. 
+    // reference.
     // Sounds like a system that lets you write programs with side-effects.
     // Is there a functional way to write these instead?
     // What about "constraint" expressions?
     // Maybe each consideration articulates some invariant.
     // As follows:
-    // (A condition is met; say an event has occurred) 
-    // (some duration has elapsed, more than a grace period but less than a timeout) 
+    // (A condition is met; say an event has occurred)
+    // (some duration has elapsed, more than a grace period but less than a timeout)
     // (we have performed some action in response to the event)
     //
 
@@ -271,12 +226,12 @@ class Entity extends UIElement {
   }
 
   message(msg) {
-    console.log(`${this.getAddress()}, received message`, msg);
+    this.debug('messaging', `received message: ${JSON.stringify(msg)}`);
     if (msg.header.dst !== this.getAddress()) {
       throw new Error(`${this.getAddress()} received message destined for ${msg.header.dst}`);
     }
     // See if we can infer considerations from this message,
-    // using what other context we have available, such as 
+    // using what other context we have available, such as
     // from other messages, or other asynchronous processes.
     // If so, then do our best to learn the implied considerations.
 
@@ -308,7 +263,7 @@ class Entity extends UIElement {
           this.stores.fastmem.set('considerations', id, msg.considerations[id]);
         }
         const c = this.stores.fastmem.get('considerations', id);
-        console.log('consideration:', c);
+        this.debug('considerations', 'consideration:', c);
       });
     }
 
@@ -379,12 +334,17 @@ const x2 = addElement(2);
 x2.setText('TWO TWO');
 const x3 = addElement(3);
 x3.setText('THREE THREE THREE');
+const x4 = addElement(4);
+x4.setText('FOUR FOUR FOUR FOUR');
 
-console.log('transport, address list', transport.list());
+debug('transport', 'address list', transport.list());
 
 x1.avoidAllOthers();
 x2.avoidAllOthers();
 x3.avoidAllOthers();
+x4.avoidAllOthers();
+
+debug('tags', listDebugTags().join(' '));
 
 // x1.askToBeConsidered(x2.getAddress());
 
