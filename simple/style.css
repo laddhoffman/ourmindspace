@@ -17,3 +17,18 @@ body {
   top: -2.5em;
   width: 20em;
 }
+
+div#display {
+  border: 1px #0000ff dotted;
+}
+
+div.overlay {
+  position: absolute;
+  border: 1px #00ff00 dotted;
+  /* z-index: 10; */
+}
+
+svg.overlay {
+  position: absolute;
+  border: 1px #ff0000 dotted;
+}

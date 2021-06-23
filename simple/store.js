@@ -1,4 +1,4 @@
-// For convenience we auto-initialize collections, 
+// For convenience we auto-initialize collections,
 // but we do not auto-initialize records within those collections.
 class Store extends Map {
   get(collection, key) {

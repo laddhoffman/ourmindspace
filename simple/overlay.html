@@ -4,12 +4,15 @@
 <meta charset="utf-8"/>
 <script src="./uielement.js"></script>
 <script src="./uientity.js"></script>
+<script src="./uimesh.js"></script>
 <script src="./transport.js"></script>
 <script src="./json-logic.js"></script>
 <script src="./uuid.js"></script>
 <script src="./store.js"></script>
 <script src="./debug.js"></script>
 <script src="./rectangle.js"></script>
+<script src="./svg-overlay.js"></script>
+
 <link rel="stylesheet" type="text/css" href="./style.css" />
 </head>
 <body>
@@ -17,23 +20,12 @@
 </body>
 <script>
 
-const transport = new TransportLayer();
-
 class Entity extends UIEntity {
   constructor(div, address) {
     super(div, address);
     this.stores = {
       fastmem: new Store(),
     };
-
-    // Register the address with transport layer
-    this.setTransport(transport);
-    this.debug('transport', `binding to address ${address}`);
-    const rxtx = transport.bind(this, address, msg => {
-      // Dispatch message to appropriate handler
-      return this.message(msg);
-    });
-    this.setRxTx(rxtx);
   }
 
   askToBeConsidered(address) {
@@ -149,44 +141,45 @@ class Entity extends UIEntity {
 }
 
 // Tests
-
-{
-  const point = {left: 1, top: 1};
-  const rect = {left: 0, top: 0, width: 2, height: 2};
-  const result = rectangleContainsPoint(rect, point);
-  if (!result) {
-    throw new Error('test failed');
+async function executeTests() {
+  {
+    const point = {left: 1, top: 1};
+    const rect = {left: 0, top: 0, width: 2, height: 2};
+    const result = rectangleContainsPoint(rect, point);
+    if (!result) {
+      throw new Error('test failed');
+    }
   }
-}
 
-{
-  const rect = {left: 0, top: 0, width: 2, height: 2};
-  const result = getRectangleCorners(rect);
-  if (result[0].left != 0 || result[0].top != 0 ||
-    result[1].left != 0 || result[1].top != 2 ||
-    result[2].left != 2 || result[2].top != 0 ||
-    result[3].left != 2 || result[3].top != 2) {
-    throw new Error('test failed');
+  {
+    const rect = {left: 0, top: 0, width: 2, height: 2};
+    const result = getRectangleCorners(rect);
+    if (result[0].left != 0 || result[0].top != 0 ||
+      result[1].left != 0 || result[1].top != 2 ||
+      result[2].left != 2 || result[2].top != 0 ||
+      result[3].left != 2 || result[3].top != 2) {
+      throw new Error('test failed');
+    }
   }
-}
 
-{
-  const rect1 = {left: 0, top: 0, width: 20, height: 10};
-  const rect2 = {left: 5, top: 0, width: 10, height: 10};
-  const result = rectanglesIntersect(rect1, rect2);
-  if (!result) {
-    throw new Error('test failed');
+  {
+    const rect1 = {left: 0, top: 0, width: 20, height: 10};
+    const rect2 = {left: 5, top: 0, width: 10, height: 10};
+    const result = rectanglesIntersect(rect1, rect2);
+    if (!result) {
+      throw new Error('test failed');
+    }
   }
 }
 
 // Example
 
-{
+async function mainStuff() {
   const display = document.getElementById('display');
-  const transport = new TransportLayer();
+  const uiMesh = new UIMesh(display);
   function addElement(address) {
     const element = new Entity(null, address);
-    display.append(element.getDiv());
+    uiMesh.addEntity(element);
     return element;
   }
   const x1 = addElement(1);
@@ -198,7 +191,7 @@ class Entity extends UIEntity {
   const x4 = addElement(4);
   x4.setText('FOUR FOUR FOUR FOUR');
 
-  debug('transport')('address list', transport.list());
+  debug('transport')('address list', uiMesh.getTransport().list());
   debug('tags')(listDebugTags().join(', '));
 
   // Separate everyone
@@ -207,70 +200,27 @@ class Entity extends UIEntity {
   x3.avoidAllOthers();
   x4.avoidAllOthers();
 
-  // This is something we'd *like* to maintain --
-  // Any time we add an element we're likely going to want to place it.
-  // Our process for that right now is as follows:
-  // - Any entity may initiate operations
-  // - The mechanism is by a Transport Layer which provides the following:
-  //   - List registered addresses.
-  //   - Register an address and listen for messages.
-  //   - Send a message to an address.
-  //
-  // Note that each real distributed system has its own unique considerations.
-  // Choices or circumstances will partition entities from one another.
-  // Therefore a distributed algorithm can not be guaranteed to complete.
-  // However, an algorithm can be a hybrid of distributed and non-distributed
-  // operations.
-  // An expression can define the conditions that represent the assumptions an
-  // entity makes.
-  //
-  //     What is the difference between an expression and a program?
-  // An expression is incomplete without an interpreter.
-  // A program is also an expression. The interpreter is the processor, i.e. x86
-  // chip.
-  // An interpreter is a program that takes expressions as inputs and produces
-  // output on behalf of those inputs; an interpreter can thus also be an
-  // expression that maps inputs to outputs.
-  // Such could be what entities exchange.
-  // Early on in scaffolding -- and in fact in the name of this file -- I use the
-  // term "considerations".
-  // I've also used it once already in this sequence of notes! (Though perhaps in
-  // a slightly different sense? Let's revisit that.)
-  // But thet point is, that it gets to the point.
-  // No matter what we're sending, we're doing it as a result of some
-  // consideration(s).
-  // The plural is interesting.
-  // I think there must always be a single root consideration, but it may be
-  // composed of other considerations!
-  // When we express a consideration, let's choose the depth.
-  // When we interpret a consideration, let's walk the tree and individually
-  // identify each consideration.
-  // We'll have some choices to make about how we represent these in storage.
   debug('tags')(listDebugTags().join(', '));
 
   const [x41, x42] = x4.verticalSplit(['10em', '10em']);
   x41.setText('Some content in element 4, column 1');
   x42.setText('Some content in element 4, column 2');
 
-  ///////////////////////////////////////////
-  // What others report; we want to consider.
-  //
+  debug('tags')(listDebugTags().join(', '));
 
-  //
-  //
-  //
+  const svgOverlay = new SVGOverlay(display);
 
-  //
-  //
-  //
+  svgOverlay.line({left: 0, top: 0}, {left: 50, top: 30}, '#0088ff');
 
-  debug('debug tags')(listDebugTags().join(', '));
+  // svgOverlay.recomputeSize();
+
 }
 
-// x1.askToBeConsidered(x2.getAddress());
-
-// Another strategy would be to form partnerships among entities, and have them
-// use that to help them self-organize.
+(async () => {
+  await executeTests();
+  // await servicesPromise;
+  await mainStuff();
+})();
 
 </script>
 

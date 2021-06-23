@@ -1,5 +1,5 @@
 class UIElement {
-  constructor(div, label) {
+  constructor(div) {
     this.children = [];
 
     if (div) {
@@ -17,15 +17,12 @@ class UIElement {
     // Let's have a div to wrap our own content
     this.headerDiv = document.createElement('div');
     this.headerDiv.style.position = 'relative';
-    this.addDiv(this.headerDiv);
+    this.getDiv().append(this.headerDiv);
 
     // Let's show a label, if present
     this.labelP = document.createElement('p');
     this.labelP.classList.add('label');
     this.headerDiv.append(this.labelP);
-    if (label) {
-      this.setLabel(label);
-    }
 
     // Have a text value in addition to other possible children
     this.p = document.createElement('p');
@@ -34,7 +31,7 @@ class UIElement {
     // Let's also have a div to wrap our children
     this.setChildrenDiv(document.createElement('div'));
     this.getChildrenDiv().style.position = 'relative';
-    this.addDiv(this.getChildrenDiv());
+    this.getDiv().append(this.getChildrenDiv());
 
     // To actually evaluate placements we may need some context.
     // I guess we can introspect our own bounding box.
@@ -70,7 +67,12 @@ class UIElement {
   getDiv() { return this.div; }
   setDiv(div) { this.div = div; }
 
-  addDiv(div) { this.getDiv().append(div); }
+  debug(tag) {
+    return (...args) => {
+      args[0] = `${this.getAddress()} ${args[0]}`;
+      debug(tag)(...args);
+    };
+  }
 
   // Apply the update to the docElement
   setText(text) { this.p.innerText = text; }

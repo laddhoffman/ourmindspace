@@ -7,10 +7,12 @@
 // For now, just make this a singleton.
 const debugTags = new Set();
 
-function debug(tag, ...args) {
-  debugTags.add(tag);
-  args[0] = `[${tag}] ${args[0]}`;
-  console.log.apply(null, args);
+function debug(tag) {
+  return (...args) => {
+    debugTags.add(tag);
+    args[0] = `[${tag}] ${args[0]}`;
+    console.log(...args);
+  };
 };
 
 function listDebugTags() {
