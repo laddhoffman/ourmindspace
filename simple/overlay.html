@@ -57,7 +57,7 @@ async function mainStuff() {
     const from = getRectangleCenter(entities[i].getRectangle());
     for (let j = i + 1; j < entities.length; j++) {
       const to = getRectangleCenter(entities[j].getRectangle());
-      svgOverlay.line(from, to, '#008888');
+      const line = svgOverlay.createLine(from, to, 'connection');
     }
   }
   // We need a way to make sure the svg viewbox is scaled correctly.

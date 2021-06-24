@@ -34,16 +34,17 @@ class SVGOverlay {
   getUiMesh() { return this.uiMesh; }
 
   // Now some useful function -- draw a line from one point to another.
-  line(from, to, stroke) {
-    // {left, top} = from, same with `to`.
+  // `from` and `to` are objects, each with properties `top` and `left`.
+  createLine(from, to, className) {
     // Let's append a line to an svg
     const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     line.setAttribute('x1', from.left);
     line.setAttribute('y1', from.top);
     line.setAttribute('x2', to.left);
     line.setAttribute('y2', to.top);
-    line.setAttribute('stroke', stroke);
-    this.svg.append(line);
+    // line.setAttribute('stroke', stroke);
+    line.classList.add(className);
+    this.getSvg().append(line);
+    return line;
   }
-
 }

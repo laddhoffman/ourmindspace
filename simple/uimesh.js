@@ -60,4 +60,8 @@ class UIMesh {
 
     return entity;
   }
+
+  densify() {
+    // Squash elements together in order to minimize the area of the bounding rectangle
+  }
 }
