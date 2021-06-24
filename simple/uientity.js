@@ -4,6 +4,11 @@ class UIEntity extends UIElement {
 
     this.setAddress(address);
     this.setId(createUUID());
+
+    // Add address to the top of our header
+    this.debug('label')(`before change: ${this.getLabel()}`);
+    this.setLabel(`(${this.getAddress()}) ${this.getLabel()}`);
+    this.debug('label')(`after change: ${this.getLabel()}`);
   }
 
   setId(id) { this.id = id; }
@@ -35,9 +40,16 @@ class UIEntity extends UIElement {
     }
     const coveredAreas = {};
     this.findAllOthers().forEach(address => {
-      const msg = {query: {var: 'offset'}};
+      const msg = {
+        queries: [
+          {var: 'bounds'},
+          {var: 'offset'},
+        ],
+      };
       this.getRxTx().send(address, msg, response => {
-        const {left, top, width, height} = response.data;
+        // this.debug(`response`, response);
+        const [bounds, offset] = response.data
+        const {left, top, width, height} = bounds;
         coveredAreas[address] = ({left, top, width, height});
       });
     });
@@ -51,9 +63,8 @@ class UIEntity extends UIElement {
 
     const overlappingAnyOthers = () => {
       const result = Object.values(coveredAreas).some(coveredArea => {
-        return rectanglesIntersect(coveredArea, this.getRectangle());
+        return rectanglesIntersect(coveredArea, this.getBoundingRectangle());
       });
-      this.debug('positioning')(`overlappingAnyOthers: ${result}`);
       return result;
     };
 
@@ -80,13 +91,13 @@ class UIEntity extends UIElement {
       switch (targetSide) {
         case 'right':
         {
-          this.debug('positioning')(`moving to the rightmost side`);
+          // this.debug('positioning')(`moving to the rightmost side`);
           // If there is extra space on the left, request all other entities
           // move left.
           const spaceAvailableLeft = getLeftmost();
           if (spaceAvailableLeft > 0) {
-            this.debug('positioning')(`space available on left side; ' +
-              'requesting all others to shift`);
+            this.debug('positioning')(`space available on left side; ` +
+              `requesting all others to shift`);
             this.requestAllOthersToShift(-spaceAvailableLeft, 0, response => {
               const address = response.header.src;
               const {left, top, width, height} = response.data;
@@ -99,15 +110,15 @@ class UIEntity extends UIElement {
         }
         case 'left':
         {
-          this.debug('positioning')(`moving to the leftmost side`);
+          // this.debug('positioning')(`moving to the leftmost side`);
           // If there's room, move to the left.
           // Then request all other entities to move to the right.
-          const spaceAvailableLeft = this.getRectangle().left;
+          const spaceAvailableLeft = this.getBoundingRectangle().left;
           if (spaceAvailableLeft > 0) {
             this.moveTo(0, null);
           }
-          const spaceAvailableRight = getLeftmost() - this.getRectangle().left -
-            this.getRectangle().width;
+          const spaceAvailableRight = getLeftmost() - this.getBoundingRectangle().left -
+            this.getBoundingRectangle().width;
           this.requestAllOthersToShift(-spaceAvailableRight + 1, 0,
             response => {
               const address = response.header.src;
@@ -162,9 +173,14 @@ class UIEntity extends UIElement {
       request: {
         shift: {right, down}
       },
-      query: {
-        var: 'offset'
-      },
+      queries: [
+        {
+          var: 'bounds'
+        },
+        {
+          var: 'offset'
+        },
+      ],
     };
     this.getRxTx().send(address, msg, response => {
       callback(response);
@@ -175,5 +191,87 @@ class UIEntity extends UIElement {
     this.findAllOthers().forEach(address => {
       this.requestOtherToShift(address, right, down, callback);
     });
+  }
+
+  message(msg) {
+    if (msg.header.dst !== this.getAddress()) {
+      throw new Error(`${this.getAddress()} received message destined for ` +
+        `${msg.header.dst}`);
+    }
+    // See if we can infer considerations from this message,
+    // using what other context we have available, such as
+    // from other messages, or other asynchronous processes.
+    // If so, then do our best to learn the implied considerations.
+
+    // How shall we go about this?
+    // Let's start simple. We'll define a message schema to let people
+    // tell us their considerations.
+    // It can be in this form:
+    // I care about the result of evaluating the following expression:
+    //   < Expression that references any available operations we support >
+    // We do the following:
+    //   - Reference immediately available memory
+    //   - Perform any necessary actions based on knowledge available at this
+    //     time
+    //   - Acknowledge receipt of request
+    //   - Perform any further actions on behalf of this message
+    //   - Perform any further actions on behalf of other considerations
+    //   - Await further messages
+    //   - Await other asynchronous events (or treat everything as a message)
+    //   - Perform any further actions on behalf of these messages or other
+    //     considerations
+
+    if (msg.considerations) {
+      Object.keys(msg.considerations).forEach(id => {
+        if (!this.stores.fastmem.has('considerations', id)) {
+          // First time we've seen this recently.
+          // It's possible we have more information available if we make some
+          // queries.
+          // We probably want to form a rank estimate, and form a plan of action.
+          // It's possible that we could revise the plan in the future, and/or
+          // that the plan encodes some complexity regarding how it will respond
+          // to future conditions. Anyway, just go ahead and store it.
+          this.stores.fastmem.set('considerations', id, msg.considerations[id]);
+        }
+        const c = this.stores.fastmem.get('considerations', id);
+        this.debug('considerations')('consideration:', c);
+      });
+    }
+
+    if (msg.request) {
+      if (msg.request.shift) {
+        const {left, top} = this.getRectangle();
+        const {shift} = msg.request;
+        // this.debug('positioning')(`received shift request. ${JSON.stringify({left, top, shift})}`);
+        this.moveTo(left + shift.right, top + shift.down);
+      }
+    }
+
+    if (msg.query && msg.queries) {
+      throw new Error('may only include one of `query` or `queries` in message');
+    }
+
+    if (msg.query || msg.queries) {
+      const context = {
+        offset: this.getRectangle(),
+        bounds: this.getBoundingRectangle(),
+      };
+      const handleQuery = query => {
+        // Let's use jsonLogic to evaluate queries.
+        // We'll explicitly expose here whatever content we want to make available.
+        const result = jsonLogic.apply(query, context);
+        // this.debug('query')(`from ${msg.header.src} ${JSON.stringify({query, result})}`);
+        return result;
+      };
+      if (msg.query) {
+        return handleQuery(msg.query);
+      }
+      if (msg.queries) {
+        return msg.queries.map(query => handleQuery(query));
+      }
+    }
+
+    // If we haven't already replied, return true here as an ack
+    return true;
   }
 }

@@ -19,6 +19,16 @@ class UIMesh {
   getTransport() { return this.transport; }
   setTransport(transport) { this.transport = transport; }
 
+  getBoundingRectangle() {
+    const rectangles = Array.from(this.entities.values())
+      .map(entity => entity.getRectangle());
+    return getBoundingRectangle(rectangles);
+  }
+
+  getEntities() {
+    return Array.from(this.entities.values());
+  }
+
   // Each constituent UIEntity will have its own uuid
   // We'll provide a Transport implementation for the UIEntities
   // that suits our purposes as it puts the right kind of control in our hands.

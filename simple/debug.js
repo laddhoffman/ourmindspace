@@ -8,6 +8,9 @@
 const debugTags = new Set();
 
 function debug(tag) {
+  if (arguments.length !== 1) {
+    throw new Error('debug(tag) takes 1 argument and returns a function');
+  }
   return (...args) => {
     debugTags.add(tag);
     args[0] = `[${tag}] ${args[0]}`;

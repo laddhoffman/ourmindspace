@@ -3,23 +3,41 @@ body {
   color: rgba(255, 255, 255, 1.0);
 }
 
-.entityRectangle {
+div.entity {
   /* margin: 50px; */
-  padding: 1em;
+  padding: 0 1em 1em 1em;
   position: absolute;
   border: 1px #bbbbbb dotted;
 }
 
-.entityRectangle .label {
+div.entity > div.header {
+  position: relative;
+  width: max-content;
+}
+
+div.header > p.label {
   font-size: 8pt;
   color: #888888;
-  position: absolute;
-  top: -2.5em;
+}
+
+div.entity > div.body {
+  position: relative;
+  /* width: max-content; */
   width: 20em;
+}
+
+div.entity > div.children {
+  position: relative;
+  border: 1px #00ffff solid;
+}
+
+div.entity div.entity {
+  /* padding: 0; */
 }
 
 div#display {
   border: 1px #0000ff dotted;
+  position: absolute;
 }
 
 div.overlay {

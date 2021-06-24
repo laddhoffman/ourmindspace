@@ -20,167 +20,12 @@
 </body>
 <script>
 
-class Entity extends UIEntity {
-  constructor(div, address) {
-    super(div, address);
-    this.stores = {
-      fastmem: new Store(),
-    };
-  }
-
-  askToBeConsidered(address) {
-    const msg = {
-      considerations: {
-        [this.getId()]: {
-          overlap: 'avoid',
-          address: this.getId()
-        },
-      },
-    };
-    this.getRxTx().send(address, msg);
-  }
-
-  learnConsideration(consideration) {
-    this.considerations.push(consideration);
-
-    // What structure do we expect here?
-    // Generally, some expression or expressions we can evaluate.
-    // I suppose it's really up to us to determine what kind of expressions
-    // we'll accept.
-    // I think what we want to do is accept expressions of the following form:
-    // (Condition, Effect). We'll evaluate conditions and try to keep track of
-    // the effects produced. Effects can cause conditions, so there may need to
-    // be some reevaluation as well.
-    // We don't need to know all the possible conditions ahead of time, if we
-    // allow some kind of dynamic/forward reference.
-    // Sounds like a system that lets you write programs with side-effects.
-    // Is there a functional way to write these instead?
-    // What about "constraint" expressions?
-    // Maybe each consideration articulates some invariant.
-    // As follows:
-    // (A condition is met; say an event has occurred)
-    // (some duration has elapsed, more than a grace period but less than a
-    // timeout)
-    // (we have performed some action in response to the event)
-    //
-
-    // State snapshotting and event streaming are powerful features.
-    // I would like to implement them in this system I'm building here, if not
-    // now then soon-ish.
-  }
-
-  message(msg) {
-    if (msg.header.dst !== this.getAddress()) {
-      throw new Error(`${this.getAddress()} received message destined for ` +
-        `${msg.header.dst}`);
-    }
-    // See if we can infer considerations from this message,
-    // using what other context we have available, such as
-    // from other messages, or other asynchronous processes.
-    // If so, then do our best to learn the implied considerations.
-
-    // How shall we go about this?
-    // Let's start simple. We'll define a message schema to let people
-    // tell us their considerations.
-    // It can be in this form:
-    // I care about the result of evaluating the following expression:
-    //   < Expression that references any available operations we support >
-    // We do the following:
-    //   - Reference immediately available memory
-    //   - Perform any necessary actions based on knowledge available at this
-    //     time
-    //   - Acknowledge receipt of request
-    //   - Perform any further actions on behalf of this message
-    //   - Perform any further actions on behalf of other considerations
-    //   - Await further messages
-    //   - Await other asynchronous events (or treat everything as a message)
-    //   - Perform any further actions on behalf of these messages or other
-    //     considerations
-
-    if (msg.considerations) {
-      Object.keys(msg.considerations).forEach(id => {
-        if (!this.stores.fastmem.has('considerations', id)) {
-          // First time we've seen this recently.
-          // It's possible we have more information available if we make some
-          // queries.
-          // We probably want to form a rank estimate, and form a plan of action.
-          // It's possible that we could revise the plan in the future, and/or
-          // that the plan encodes some complexity regarding how it will respond
-          // to future conditions. Anyway, just go ahead and store it.
-          this.stores.fastmem.set('considerations', id, msg.considerations[id]);
-        }
-        const c = this.stores.fastmem.get('considerations', id);
-        this.debug('considerations')('consideration:', c);
-      });
-    }
-
-    if (msg.request) {
-      if (msg.request.shift) {
-        const {left, top} = this.getRectangle();
-        const {shift} = msg.request;
-        this.debug('positioning')(`received shift request. ${JSON.stringify(
-          {left, top, shift})}`);
-        this.moveTo(left + shift.right, top + shift.down);
-      }
-    }
-
-    if (msg.query) {
-      // Let's use jsonLogic to evaluate this.
-      // We'll explicitly expose here whatever content we want to make
-      // available.
-      const context = {
-        offset: this.getRectangle(),
-      };
-      const result = jsonLogic.apply(msg.query, context);
-      return result;
-    }
-
-    // If we haven't already replied, return true here as an ack
-    return true;
-  }
-}
-
-// Tests
-async function executeTests() {
-  {
-    const point = {left: 1, top: 1};
-    const rect = {left: 0, top: 0, width: 2, height: 2};
-    const result = rectangleContainsPoint(rect, point);
-    if (!result) {
-      throw new Error('test failed');
-    }
-  }
-
-  {
-    const rect = {left: 0, top: 0, width: 2, height: 2};
-    const result = getRectangleCorners(rect);
-    if (result[0].left != 0 || result[0].top != 0 ||
-      result[1].left != 0 || result[1].top != 2 ||
-      result[2].left != 2 || result[2].top != 0 ||
-      result[3].left != 2 || result[3].top != 2) {
-      throw new Error('test failed');
-    }
-  }
-
-  {
-    const rect1 = {left: 0, top: 0, width: 20, height: 10};
-    const rect2 = {left: 5, top: 0, width: 10, height: 10};
-    const result = rectanglesIntersect(rect1, rect2);
-    if (!result) {
-      throw new Error('test failed');
-    }
-  }
-}
-
-// Example
-
 async function mainStuff() {
   const display = document.getElementById('display');
   const uiMesh = new UIMesh(display);
   function addElement(address) {
-    const element = new Entity(null, address);
-    uiMesh.addEntity(element);
-    return element;
+    const element = new UIEntity(null, address);
+    return uiMesh.addEntity(element);
   }
   const x1 = addElement(1);
   x1.setText('ONE');
@@ -189,10 +34,13 @@ async function mainStuff() {
   const x3 = addElement(3);
   x3.setText('THREE THREE THREE');
   const x4 = addElement(4);
-  x4.setText('FOUR FOUR FOUR FOUR');
+  x4.setText('FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR FOUR ');
 
-  debug('transport')('address list', uiMesh.getTransport().list());
-  debug('tags')(listDebugTags().join(', '));
+  debug('transport')(`address list: ${JSON.stringify(uiMesh.getTransport().list())}`);
+
+  const [x41, x42] = x4.verticalSplit(['10em', '10em']);
+  x41.setText('Some content in element 4, column 1');
+  x42.setText('Somenonbreakingcontentinelement4,column2');
 
   // Separate everyone
   x1.avoidAllOthers();
@@ -200,26 +48,26 @@ async function mainStuff() {
   x3.avoidAllOthers();
   x4.avoidAllOthers();
 
-  debug('tags')(listDebugTags().join(', '));
+  const svgOverlay = new SVGOverlay(uiMesh);
 
-  const [x41, x42] = x4.verticalSplit(['10em', '10em']);
-  x41.setText('Some content in element 4, column 1');
-  x42.setText('Some content in element 4, column 2');
-
-  debug('tags')(listDebugTags().join(', '));
-
-  const svgOverlay = new SVGOverlay(display);
-
-  svgOverlay.line({left: 0, top: 0}, {left: 50, top: 30}, '#0088ff');
-
+  // Let's draw lines between each element
+  const entities = uiMesh.getEntities();
+  debug('uimesh')('entities', entities);
+  for (let i = 0; i < entities.length - 1; i++) {
+    const from = getRectangleCenter(entities[i].getRectangle());
+    for (let j = i + 1; j < entities.length; j++) {
+      const to = getRectangleCenter(entities[j].getRectangle());
+      svgOverlay.line(from, to, '#008888');
+    }
+  }
+  // We need a way to make sure the svg viewbox is scaled correctly.
   // svgOverlay.recomputeSize();
 
 }
 
 (async () => {
-  await executeTests();
-  // await servicesPromise;
   await mainStuff();
+  debug('tags')(listDebugTags().join(', '));
 })();
 
 </script>
